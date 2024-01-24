@@ -108,8 +108,11 @@ router.put("/events/:eventId/change-date", (req, res) => {
 });
 
 router.post("/products", (req, res) => {
-  const { name, note, typeId, amount, userId } = req.body;
+  let { name, note, typeId, amount, userId,recipeId } = req.body;
 
+  if (recipeId === 0) {
+    recipeId = null
+  }
   if (!name || !userId) {
     return res
       .status(400)
@@ -117,11 +120,11 @@ router.post("/products", (req, res) => {
   }
 
   const insertQuery =
-    "INSERT INTO products (name, note, typeId, amount, userId) VALUES (?, ?, ?, ?, ?)";
-
+    "INSERT INTO products (name, note, typeId, amount, userId,recipeId) VALUES (?, ?, ?, ?, ?,?)";
+ 
   connection.query(
     insertQuery,
-    [name, note, typeId, amount, userId],
+    [name, note, typeId, amount, userId,recipeId],
     (error, results, fields) => {
       if (error) {
         console.error("Ошибка при выполнении запроса:", error);
@@ -192,6 +195,8 @@ router.put("/events/:eventId", (req, res) => {
     }
   );
 });
+
+
 
 
 router.delete("/products/:productId", (req, res) => {

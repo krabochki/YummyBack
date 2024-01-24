@@ -11,9 +11,12 @@ const io = require("socket.io")(httpServer, { cors: { origin: "*" }});
 const users = require("./users.js");
 const plans = require("./plans.js")
 const groups = require("./groups.js")
+const updates = require("./updates.js")
 const categories = require("./categories.js")
 const ingredients = require("./ingredients.js")
 const sections = require("./sections.js")
+const comments = require("./comments.js")
+const reports = require("./reports.js")
 const recipes = require("./recipes.js")
 const notifications = require("./notifications.js")
 const api = require("./auth.js")
@@ -31,6 +34,9 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(bodyParser.json());
 app.use("/users", users);
+app.use("/comments", comments);
+app.use("/reports", reports);
+app.use("/updates", updates);
 app.use("/ingredients", ingredients);
 app.use("/categories", categories);
 app.use("/notifications", notifications);

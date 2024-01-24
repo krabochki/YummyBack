@@ -29,18 +29,6 @@ const upload = multer({ storage: storage });
 
 
 
-router.get('/', (req, res) => {
-  const selectQuery = "SELECT * FROM sections";
-
-  connection.query(selectQuery, (error, results, fields) => {
-    if (error) {
-      console.error("Ошибка при выполнении запроса:", error);
-      res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
-    } else {
-      res.status(200).json(results);
-    }
-  });
-});
 
 router.post("/", (req, res) => {
   const { name, image } = req.body;
@@ -75,6 +63,229 @@ router.post("/", (req, res) => {
     }
   );
 }); 
+
+
+router.get('/some/:sectionId', (req, res) => {
+  const sectionId = Number(req.params.sectionId);
+  let selectQuery = "SELECT id,name, image FROM sections WHERE id = ?";
+
+  connection.query(selectQuery,[sectionId], (error, section, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+   
+          res.status(200).json(section[0]);
+
+
+    }
+  });
+});
+
+
+router.get("/all-not-empty", (req, res) => {
+    const page = req.query.page;
+  const limit = req.query.limit || 2;
+
+  const startIndex = page * limit;
+
+    let countQuery = `SELECT COUNT(*) AS totalCount FROM sections`;
+
+const selectQuery = `
+  SELECT s.*, COUNT(DISTINCT rc.recipeId) AS recipeCount
+  FROM sections s
+  LEFT JOIN categories c ON s.id = c.sectionId
+  LEFT JOIN \`recipes-categories\` rc ON c.id = rc.categoryId
+  WHERE s.id IN (
+    SELECT DISTINCT c.sectionId
+    FROM categories c
+    WHERE c.sectionId IS NOT NULL
+  )
+  GROUP BY s.id, s.name
+  LIMIT ${startIndex}, ${limit};
+`;
+
+  
+
+  connection.query(countQuery, (error, countResults, fields) => {
+    if (error) {
+      res
+          .status(500)
+          .json({ error: "Ошибка при получении данных из базы данных" });
+    }
+
+          const totalCount = countResults[0].totalCount;
+
+    connection.query(selectQuery, (error, results, fields) => {
+      if (error) {
+        console.error("Ошибка при выполнении запроса:", error);
+        res
+          .status(500)
+          .json({ error: "Ошибка при получении данных из базы данных" });
+      } else {
+        res.status(200).json({results:results, count:totalCount});
+      }
+    });
+  })
+});
+
+
+
+
+router.get("/all", (req, res) => {
+    const page = req.query.page;
+  const limit = req.query.limit || 2;
+
+  const startIndex = page * limit;
+
+    let countQuery = `SELECT COUNT(*) AS totalCount FROM sections`;
+
+  const selectQuery = `
+    SELECT s.*, COUNT(DISTINCT rc.recipeId) AS recipeCount
+    FROM sections s
+    LEFT JOIN categories c ON s.id = c.sectionId
+    LEFT JOIN \`recipes-categories\` rc ON c.id = rc.categoryId
+    GROUP BY s.id, s.name
+    LIMIT ${startIndex}, ${limit};
+  `;
+  
+
+  connection.query(countQuery, (error, countResults, fields) => {
+    if (error) {
+      res
+          .status(500)
+          .json({ error: "Ошибка при получении данных из базы данных" });
+    }
+
+          const totalCount = countResults[0].totalCount;
+
+    connection.query(selectQuery, (error, results, fields) => {
+      if (error) {
+        console.error("Ошибка при выполнении запроса:", error);
+        res
+          .status(500)
+          .json({ error: "Ошибка при получении данных из базы данных" });
+      } else {
+        res.status(200).json({results:results, count:totalCount});
+      }
+    });
+  })
+});
+
+
+router.get("/some", (req, res) => {
+    const page = req.query.page;
+  const limit = req.query.limit || 2;
+
+  const startIndex = page * limit;
+
+  
+
+let countQuery = `SELECT COUNT(*) AS totalCount FROM sections s
+                  WHERE EXISTS (
+                    SELECT 1 FROM categories c
+                    WHERE c.sectionId = s.id
+                  )`;
+
+  const selectQuery = `SELECT DISTINCT sections.id, sections.name FROM sections
+                       JOIN categories ON sections.id = categories.sectionId
+                       ORDER BY sections.id LIMIT ${startIndex}, ${limit}`;
+  
+
+  connection.query(countQuery, (error, countResults, fields) => {
+    if (error) {
+      res
+          .status(500)
+          .json({ error: "Ошибка при получении данных из базы данных" });
+    }
+
+          const totalCount = countResults[0].totalCount;
+
+    connection.query(selectQuery, (error, results, fields) => {
+      if (error) {
+        console.error("Ошибка при выполнении запроса:", error);
+        res
+          .status(500)
+          .json({ error: "Ошибка при получении данных из базы данных" });
+      } else {
+        res.status(200).json({results:results, count:totalCount});
+      }
+    });
+  })
+});
+
+router.get("/global/search", (req, res) => {
+  const searchText = req.query.search; 
+
+  const selectQuery =
+    "(SELECT id, name, 'section' AS type FROM sections WHERE name LIKE ?) " +
+    "UNION " +
+    "(SELECT id, name, 'category' AS type FROM categories WHERE status = 'public' AND name LIKE ?)";
+
+  connection.query(selectQuery, [`%${searchText}%`, `%${searchText}%`], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+router.get("/search", (req, res) => {
+  const searchText = req.query.search; 
+
+  const selectQuery =
+    "(SELECT id, name FROM sections WHERE name LIKE ?)";
+
+  connection.query(selectQuery, [`%${searchText}%`], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+router.get('/short/:sectionId', (req, res) => {
+  const sectionId = req.params.sectionId;
+
+  const selectQuery = "SELECT id,name FROM sections WHERE id = ?";
+
+  connection.query(selectQuery,[sectionId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+router.get('/images/:sectionId', (req, res) => {
+  const sectionId = req.params.sectionId;
+
+  const selectQuery = `  
+    SELECT c.image
+    FROM categories c
+    WHERE c.sectionId = ? AND c.image != '' AND c.image IS NOT NULL;
+  `;
+
+  connection.query(selectQuery, [sectionId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      // Извлекаем значения из свойства image каждого объекта
+      const imageUrls = results.map(result => result.image);
+
+      // Отправляем массив строк в ответе
+      res.status(200).json(imageUrls);
+    }
+  });
+});
+
 
 router.delete('/:sectionId', (req, res) => {
   const sectionId = req.params.sectionId;

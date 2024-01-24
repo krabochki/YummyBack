@@ -6,7 +6,7 @@ const path = require("path");
 
 const cors = require("cors");
 
-const corsOptions = {
+const corsOptions = { 
   origin: true,
   credentials: true,
 };
@@ -32,7 +32,7 @@ router.put("/set-group/:ingredientId", (req, res) => {
   const groupId = req.body.id;
 
   const query =
-    "INSERT INTO `ingredients_groups` (groupId, ingredientId) VALUES (?,?)";
+    "INSERT INTO `groups-ingredients` (groupId, ingredientId) VALUES (?,?)";
 
   connection.query(query, [groupId, ingredientId], (error, results, fields) => {
     if (error) {
@@ -53,7 +53,7 @@ router.put("/unset-group/:ingredientId", (req, res) => {
   const groupId = req.body.id;
 
   const query =
-    "DELETE FROM `ingredients_groups` WHERE groupId = ? AND ingredientId = ?;";
+    "DELETE FROM `groups-ingredients` WHERE groupId = ? AND ingredientId = ?;";
 
   connection.query(query, [groupId, ingredientId], (error, results, fields) => {
     if (error) {
@@ -103,13 +103,13 @@ router.post("/", (req, res) => {
     name,
     image,
     sendDate,
-    authorId,
+    author,
     description,
     variations,
     advantages,
     disadvantages,
     origin,
-    precaution,
+    precautions,
     tips,
     recommendations,
     contraindicates,
@@ -117,7 +117,7 @@ router.post("/", (req, res) => {
     cookingMethods,
     storageMethods,
     externalLinks,
-    shoppingGroupId,
+    shoppingListGroup,
     status,
   } = req.body;
 
@@ -130,17 +130,17 @@ router.post("/", (req, res) => {
   compatibleDishes = JSON.stringify(compatibleDishes);
   storageMethods = JSON.stringify(storageMethods);
   externalLinks = JSON.stringify(externalLinks);
-  precaution = JSON.stringify(precaution);
+  precautions = JSON.stringify(precautions);
   tips = JSON.stringify(tips);
 
-  if (!name || !authorId) {
+  if (!name || !author) {
     return res
       .status(400)
       .json({ info: "Недостаточно данных для добавления ингредиента" });
   }
 
   const insertQuery =
-    "INSERT INTO ingredients (name, image, sendDate, authorId, description, variations, advantages, disadvantages, origin, precaution, tips, recommendations, contraindicates, compatibleDishes, cookingMethods, storageMethods, externalLinks, shoppingGroupId, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    "INSERT INTO ingredients (name, image, sendDate, author, description, variations, advantages, disadvantages, origin, precautions, tips, recommendations, contraindicates, compatibleDishes, cookingMethods, storageMethods, externalLinks, shoppingListGroup, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
   connection.query(
     insertQuery,
@@ -148,13 +148,13 @@ router.post("/", (req, res) => {
       name,
       image,
       new Date(sendDate),
-      authorId,
+      author,
       description,
       variations,
       advantages,
       disadvantages,
       origin,
-      precaution,
+      precautions,
       tips,
       recommendations,
       contraindicates,
@@ -162,7 +162,7 @@ router.post("/", (req, res) => {
       cookingMethods,
       storageMethods,
       externalLinks,
-      shoppingGroupId,
+      shoppingListGroup,
       status,
     ],
     (error, results, fields) => {
@@ -245,7 +245,7 @@ router.put("/:ingredientId", (req, res) => {
     advantages,
     disadvantages,
     origin,
-    precaution,
+    precautions,
     tips,
     recommendations,
     contraindicates,
@@ -253,11 +253,23 @@ router.put("/:ingredientId", (req, res) => {
     cookingMethods,
     storageMethods,
     externalLinks,
-    shoppingGroupId,
+    shoppingListGroup,
     } = req.body;
     
+    variations = JSON.stringify(variations);
+  advantages = JSON.stringify(advantages);
+  disadvantages = JSON.stringify(disadvantages);
+  recommendations = JSON.stringify(recommendations);
+  contraindicates = JSON.stringify(contraindicates);
+  cookingMethods = JSON.stringify(cookingMethods);
+  compatibleDishes = JSON.stringify(compatibleDishes);
+  storageMethods = JSON.stringify(storageMethods);
+  externalLinks = JSON.stringify(externalLinks);
+  precautions = JSON.stringify(precautions);
+  tips = JSON.stringify(tips);
+
     const updateQuery =
-        'UPDATE ingredients SET name = ?, image =?, description=?, variations=?, advantages=?, disadvantages=?, origin=?, precaution=?, tips=?, recommendations=?, contraindicates=?, compatibleDishes=?, cookingMethods=?, storageMethods=?, externalLinks=?, shoppingGroupId=? WHERE id = ?';
+        'UPDATE ingredients SET name = ?, image =?, description=?, variations=?, advantages=?, disadvantages=?, origin=?, precautions=?, tips=?, recommendations=?, contraindicates=?, compatibleDishes=?, cookingMethods=?, storageMethods=?, externalLinks=?, shoppingListGroup=? WHERE id = ?';
     
   connection.query(
     updateQuery,
@@ -268,7 +280,7 @@ router.put("/:ingredientId", (req, res) => {
     advantages,
     disadvantages,
     origin,
-    precaution,
+    precautions,
     tips,
     recommendations,
     contraindicates,
@@ -276,7 +288,8 @@ router.put("/:ingredientId", (req, res) => {
     cookingMethods,
     storageMethods,
     externalLinks,
-          shoppingGroupId
+      shoppingListGroup,
+          ingredientId
       ],
     (error, results, fields) => {
       if (error) {

@@ -41,6 +41,44 @@ router.get("/", (req, res) => {
   });
 });
 
+
+router.get("/updates", (req, res) => {
+  const query =
+    "SELECT id,role FROM users";
+  connection.query(query, (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ content: "Ошибка при выполнении запроса к базе данных" });
+    } else {
+      res.json(results);
+    }
+  });
+});
+
+router.get("/updates/:userId", (req, res) => {
+  const userId = req.params.userId;
+  const query = "SELECT id,username,permissions,fullName FROM users WHERE id = ?";
+  
+  connection.query(query, [userId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ content: "Ошибка при выполнении запроса к базе данных" });
+    } else {
+      if (results.length > 0) {
+        res.json(results[0]); // Если найдены результаты, возвращаем первый (и единственный) результат
+      } else {
+        res.status(404).json({ content: "Пользователь не найден" });
+      }
+    }
+  });
+});
+
+
+
 router.put("/public/:userId", (req, res) => {
   const userId = req.params.userId;
   const updatedUserData = req.body;

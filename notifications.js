@@ -21,7 +21,7 @@ router.post('/', (req, res) => {
     title,
     context,
     message,
-    timestamp,
+    sendDate,
     relatedLink,
     relatedId,
     userId,
@@ -38,7 +38,7 @@ router.post('/', (req, res) => {
   
   connection.query(
     query,
-    [read, type, title, context, message, timestamp, relatedLink, relatedId || null, userId],
+    [read, type, title, context, message, sendDate, relatedLink, relatedId || null, userId],
     (error, results, fields) => {
       if (error) {
         console.error('Ошибка при выполнении запроса:', error);
@@ -53,7 +53,8 @@ router.post('/', (req, res) => {
 router.delete('/:userId', (req, res) => {
   const userId = req.params.userId;
 
-  const query = 'DELETE FROM notifications WHERE userId = ?';
+
+  const query =  `DELETE FROM notifications WHERE (userId = ? AND context NOT IN ('plan-reminder', 'plan-reminder-start'))`;
 
   connection.query(query, [userId], (error, results, fields) => {
     if (error) {

@@ -65,8 +65,10 @@ router.post("/login", async (req, res) => {
 router.get("/token-user", (req, res) => {
   const token = req.cookies.token;
 
+  const noUser={id:0}
+
   if (!token) {
-    return res.status(401).send("Токен отсутствует");
+            return res.status(200).json(noUser);
   } else {
     try {
       const decoded = jwt.verify(token, jwtSecret);
@@ -81,12 +83,12 @@ router.get("/token-user", (req, res) => {
 
             return res.status(200).json(user);
           } else {
-            res.status(404).send("Пользователь не найден");
+            return res.status(404).send("Пользователь не найден");
           }
         }
       });
     } catch (error) {
-      res.status(401).send("Недействительный токен");
+      return res.status(401).send("Недействительный токен");
     }
   }
 });

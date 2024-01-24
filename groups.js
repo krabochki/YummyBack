@@ -147,7 +147,7 @@ router.put('/:groupsId', (req, res) => {
 
 
 router.get("/ingredients/:groupId", (req, res) => {
-  const groupId = req.params.sectionId;
+  const groupId = req.params.groupId;
   const query = "SELECT ingredientId FROM `groups-ingredients` WHERE groupId = ?";
   connection.query(query, [groupId], (error, results, fields) => {
     if (error) {
@@ -156,7 +156,7 @@ router.get("/ingredients/:groupId", (req, res) => {
         .status(500)
         .json({ error: "Ошибка при выполнении запроса к базе данных" });
     } else {
-      const ingredients = results.map((result) => result.id);
+      const ingredients = results.map((result) => result.ingredientId) || [];
       res.json(ingredients);
     }
   });
