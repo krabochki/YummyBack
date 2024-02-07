@@ -170,4 +170,205 @@ router.post("/image", upload.single("image"), (req, res) => {
     .json({ message: "Изображение секции успешно загружено", filename: imageFilename });
 });
 
+
+
+router.get("/some", (req, res) => {
+  const page = req.query.page;
+  const limit = req.query.limit || 2;
+  const startIndex = page * limit;
+
+  const countQuery =
+  `
+    SELECT COUNT(DISTINCT g.id) AS totalCount
+    FROM \`groups\` g
+    WHERE EXISTS (
+      SELECT 1
+      FROM \`groups-ingredients\` gi
+      WHERE gi.groupId = g.id
+    );
+  `;
+
+  const selectQuery = `SELECT DISTINCT \`groups\`.id, \`groups\`.name 
+                       FROM \`groups\`
+                       JOIN \`groups-ingredients\` ON \`groups\`.id = \`groups-ingredients\`.groupId
+                       ORDER BY \`groups\`.id LIMIT ${startIndex}, ${limit}`;
+  
+  connection.query(countQuery, (error, countResults, fields) => {
+    if (error) {
+      res
+          .status(500)
+          .json({ error: "Ошибка при получении данных из базы данных" });
+    }
+
+  const totalCount = countResults[0].totalCount;
+
+  connection.query(selectQuery, (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при получении данных из базы данных" });
+      } else {
+        res.status(200).json({results:results, count:totalCount});
+      }
+    });
+  })
+});
+
+
+
+router.get("/group/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const query = "SELECT id,image, name FROM `groups` WHERE id = ?";
+
+  connection.query(query, [id], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+router.get("/some-full/:userId", (req, res) => {
+
+  const authorId = Number(req.params.userId) || 0;
+
+  const page = req.query.page;
+  const limit = req.query.limit || 2;
+  const startIndex = page * limit;
+
+  const countQuery =
+  `
+    SELECT COUNT(DISTINCT g.id) AS totalCount
+    FROM \`groups\` g
+  `;
+
+  const selectQuery = `
+    SELECT g.id, g.name, g.image,
+      COUNT(DISTINCT ri.recipeId) AS recipesCount
+    FROM \`groups\` g
+    LEFT JOIN \`groups-ingredients\` gi ON g.id = gi.groupId
+    LEFT JOIN ingredients i ON gi.ingredientId = i.id
+    LEFT JOIN \`recipes-ingredients\` ri ON i.name = ri.name OR ri.name IN 
+      (SELECT variation FROM \`ingredients-variations\` WHERE ingredientId = i.id)
+    LEFT JOIN recipes r ON ri.recipeId = r.id
+    WHERE i.status = 'public' AND (r.status = 'public' OR r.authorId = ? OR r.id IS NULL)  OR gi.groupId IS NULL
+    GROUP BY g.id
+    ORDER BY recipesCount DESC, g.id`;
+  
+  connection.query(countQuery, (error, countResults, fields) => {
+    if (error) {
+      res
+          .status(500)
+          .json({ error: "Ошибка при получении данных из базы данных" });
+    }
+
+  const totalCount = countResults[0].totalCount;
+
+  connection.query(selectQuery, [authorId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при получении данных из базы данных" });
+      } else {
+        res.status(200).json({results:results, count:totalCount});
+      }
+    });
+  })
+});
+
+router.get("/some-ingredients/:groupId/:userId", (req, res) => {
+  const groupId = Number(req.params.groupId);
+  const userId = Number(req.params.userId);
+  const page = req.query.page || 0; // Установите значение по умолчанию на страницу 0, если не указано
+  const limit = req.query.limit || 2;
+  const startIndex = page * limit;
+
+  const countQuery = `
+    SELECT COUNT(*) AS totalCount
+    FROM ingredients i
+    INNER JOIN \`groups-ingredients\` gi ON i.id = gi.ingredientId
+    WHERE gi.groupId = ? AND i.status = 'public'`;
+
+  const selectQuery = `
+    SELECT i.id, i.name, i.image,
+      (SELECT COUNT(DISTINCT ri.recipeId)
+      FROM \`recipes-ingredients\` ri
+      JOIN recipes r ON ri.recipeId = r.id
+      WHERE (r.status = 'public' OR r.authorId = ?) 
+        AND (ri.name = i.name OR ri.name IN (SELECT variation FROM \`ingredients-variations\` WHERE ingredientId = i.id))) 
+      AS recipesCount
+    FROM ingredients i
+    INNER JOIN \`groups-ingredients\` gi ON i.id = gi.ingredientId
+    WHERE i.status = 'public' AND gi.groupId = ?
+    ORDER BY recipesCount DESC, i.name
+      LIMIT ${startIndex}, ${limit};
+
+    `;
+
+  connection.query(countQuery, [groupId], (error, countResults, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      const totalCount = countResults[0].totalCount;
+
+      connection.query(selectQuery, [userId, groupId], (error, results, fields) => {
+        if (error) {
+          console.error("Ошибка при выполнении запроса:", error);
+          res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+        } else {
+          res.status(200).json({ results: results, count: totalCount });
+        }
+      });
+    }
+  });
+});
+
+
+
+router.get("/search", (req, res) => {
+  const searchText = req.query.search; 
+
+  const selectQuery =
+    "SELECT id, name FROM \`groups\` WHERE name LIKE ?";
+  connection.query(selectQuery, [`%${searchText}%`], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+router.get("/search-by-group/:groupId", (req, res) => {
+    const groupId = Number(req.params.groupId);
+
+  const searchText = req.query.search; 
+  const selectQuery =
+    `
+    SELECT DISTINCT i.id, i.name
+    FROM ingredients i
+    INNER JOIN \`groups-ingredients\` gi ON i.id = gi.ingredientId
+    LEFT JOIN \`ingredients-variations\` iv ON i.id = iv.ingredientId
+    WHERE (i.name LIKE ? OR iv.variation LIKE ?) AND gi.groupId = ? AND i.status = 'public'
+    `;
+  connection.query(selectQuery, [`%${searchText}%`,`%${searchText}%`, groupId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+
+
 module.exports = router;

@@ -6,7 +6,7 @@ const path = require("path");
 
 const cors = require("cors");
 
-const corsOptions = { 
+const corsOptions = {
   origin: true,
   credentials: true,
 };
@@ -44,6 +44,246 @@ router.put("/set-group/:ingredientId", (req, res) => {
       res.status(200).json({
         message: `Свойство пользователя успешно обновлено`,
       });
+    }
+  });
+});
+
+router.get("/ingredient/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const query = "SELECT id, name, status FROM ingredients WHERE id = ?";
+
+  connection.query(query, [id], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+router.get("/variations/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const query =
+    "SELECT variation FROM `ingredients-variations` WHERE ingredientId = ?";
+
+  connection.query(query, [id], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      const variationsArray = results.map((result) => result.variation);
+      res.status(200).json(variationsArray);
+    }
+  });
+});
+
+router.get("/products/:ingredientId/:userId", (req, res) => {
+  const ingredientId = Number(req.params.ingredientId);
+  const userId = Number(req.params.userId);
+  const query = `SELECT DISTINCT p.*
+     FROM products p
+     LEFT JOIN ingredients i ON p.name LIKE CONCAT('%', i.name, '%')
+     LEFT JOIN \`ingredients-variations\` iv ON (p.name LIKE CONCAT('%', iv.variation, '%')
+        AND iv.ingredientId = ?) OR p.name LIKE CONCAT('%', iv.variation, '%')
+     WHERE ((i.id IS NOT NULL AND i.id = ?)
+        OR (iv.ingredientId IS NOT NULL AND iv.ingredientId = ?)) AND p.userId = ?`;
+
+  connection.query(query, [ingredientId, ingredientId, ingredientId, userId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      const hasRows = results.length > 0;
+      res.status(200).json({ hasRows });
+    }
+  });
+});
+
+router.get("/full-ingredient/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const query = `SELECT 
+      id,
+      image,
+      name, 
+      history, 
+      description, 
+      advantages, 
+      disadvantages, 
+      origin, 
+      status,
+      nutritions,
+      precautions, 
+      tips,
+      recommendations,
+      contraindicates,
+      compatibleDishes,
+      cookingMethods,
+      storageMethods, 
+      externalLinks,
+      shoppingListGroup
+  FROM 
+	  ingredients
+  WHERE
+    id = ?
+    `;
+
+  connection.query(query, [id], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results[0]);
+    }
+  });
+});
+
+router.get("/by-group/:groupId/:userId", (req, res) => {
+  const groupId = Number(req.params.groupId);
+  const authorId = Number(req.params.userId) || 0;
+
+  const selectQuery = `
+    SELECT i.name, i.id, i.image,
+      (SELECT COUNT(DISTINCT ri.recipeId)
+      FROM \`recipes-ingredients\` ri
+      JOIN recipes r ON ri.recipeId = r.id
+      WHERE (r.status = 'public' OR r.authorId = ?) 
+        AND (ri.name = i.name OR ri.name IN (SELECT variation FROM \`ingredients-variations\` WHERE ingredientId = i.id))) AS recipesCount
+    FROM ingredients i
+    JOIN \`groups-ingredients\` gi ON i.id = gi.ingredientId
+    WHERE i.status = 'public' AND gi.groupId = ?
+    GROUP BY i.id, i.name
+    ORDER BY recipesCount DESC, i.name
+    LIMIT 8;
+  `;
+
+  connection.query(selectQuery, [authorId, groupId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+
+
+
+router.get("/some-popular/:userId", (req, res) => {
+  const authorId = Number(req.params.userId) || 0;
+  const page = req.query.page || 0; // Установите значение по умолчанию на страницу 0, если не указано
+  const limit = req.query.limit || 2;
+  const startIndex = page * limit;
+
+    const countQuery = `
+    SELECT COUNT(*)  AS totalCount
+    FROM (
+        SELECT i.name, i.id, i.image,
+          (SELECT COUNT(DISTINCT ri.recipeId)
+          FROM \`recipes-ingredients\` ri
+          JOIN recipes r ON ri.recipeId = r.id
+            WHERE (r.status = 'public' OR r.authorId = ?) 
+            AND (ri.name = i.name OR ri.name IN (SELECT variation FROM \`ingredients-variations\` WHERE ingredientId = i.id)))
+            AS recipesCount
+        FROM ingredients i
+        WHERE i.status = 'public'
+        HAVING recipesCount > 0
+    ) AS count;
+    `;
+
+  const selectQuery = `
+    SELECT i.name, i.id, i.image,
+      (SELECT COUNT(DISTINCT ri.recipeId)
+      FROM \`recipes-ingredients\` ri
+      JOIN recipes r ON ri.recipeId = r.id
+        WHERE (r.status = 'public' OR r.authorId = ?) 
+        AND (ri.name = i.name OR ri.name IN (SELECT variation FROM \`ingredients-variations\` WHERE ingredientId = i.id)))
+        AS recipesCount
+    FROM ingredients i
+    WHERE i.status = 'public'
+    HAVING recipesCount > 0
+    ORDER BY recipesCount DESC, i.name
+    LIMIT ${startIndex}, ${limit};
+  `;
+
+  connection.query(countQuery, [authorId], (error, countResults, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      const totalCount = countResults[0].totalCount;
+
+      connection.query(selectQuery, [authorId], (error, results, fields) => {
+        if (error) {
+          console.error("Ошибка при выполнении запроса:", error);
+          res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+        } else {
+          res.status(200).json({ results: results, count: totalCount });
+        }
+      });
+    }
+  });
+});
+
+router.get("/popular/:userId", (req, res) => {
+  const authorId = Number(req.params.userId) || 0;
+
+  const query = `
+    SELECT i.name, i.id, i.image,
+      (SELECT COUNT(DISTINCT ri.recipeId)
+      FROM \`recipes-ingredients\` ri
+      JOIN recipes r ON ri.recipeId = r.id
+        WHERE (r.status = 'public' OR r.authorId = ?) 
+        AND (ri.name = i.name OR ri.name IN (SELECT variation FROM \`ingredients-variations\` WHERE ingredientId = i.id)))
+        AS recipesCount
+    FROM ingredients i
+    WHERE i.status = 'public'
+    HAVING recipesCount > 0
+    ORDER BY recipesCount DESC, i.name
+    LIMIT 8;
+  `;
+
+  connection.query(query, [authorId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+
+router.get("/groups/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const query = `
+    SELECT g.id, g.name
+    FROM \`groups\` g
+    JOIN \`groups-ingredients\` gi ON g.id = gi.groupId
+    JOIN ingredients i ON i.id = gi.ingredientId
+    WHERE i.id = ?;
+  `;
+  connection.query(query, [id], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results);
     }
   });
 });
@@ -105,12 +345,13 @@ router.post("/", (req, res) => {
     sendDate,
     author,
     description,
-    variations,
     advantages,
+    history,
     disadvantages,
     origin,
     precautions,
     tips,
+    nutritions,
     recommendations,
     contraindicates,
     compatibleDishes,
@@ -121,7 +362,6 @@ router.post("/", (req, res) => {
     status,
   } = req.body;
 
-  variations = JSON.stringify(variations);
   advantages = JSON.stringify(advantages);
   disadvantages = JSON.stringify(disadvantages);
   recommendations = JSON.stringify(recommendations);
@@ -131,6 +371,7 @@ router.post("/", (req, res) => {
   storageMethods = JSON.stringify(storageMethods);
   externalLinks = JSON.stringify(externalLinks);
   precautions = JSON.stringify(precautions);
+  nutritions = JSON.stringify(nutritions);
   tips = JSON.stringify(tips);
 
   if (!name || !author) {
@@ -140,17 +381,18 @@ router.post("/", (req, res) => {
   }
 
   const insertQuery =
-    "INSERT INTO ingredients (name, image, sendDate, author, description, variations, advantages, disadvantages, origin, precautions, tips, recommendations, contraindicates, compatibleDishes, cookingMethods, storageMethods, externalLinks, shoppingListGroup, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    "INSERT INTO ingredients (name, image, nutritions, sendDate, author, description, history, advantages, disadvantages, origin, precautions, tips, recommendations, contraindicates, compatibleDishes, cookingMethods, storageMethods, externalLinks, shoppingListGroup, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?)";
 
   connection.query(
     insertQuery,
     [
       name,
       image,
+      nutritions,
       new Date(sendDate),
       author,
       description,
-      variations,
+      history,
       advantages,
       disadvantages,
       origin,
@@ -203,6 +445,54 @@ router.delete("/:ingredientId", (req, res) => {
   });
 });
 
+router.delete("/products/:ingredientId/:userId", (req, res) => {
+  const ingredientId = req.params.ingredientId;
+  const userId = req.params.userId;
+  const query =
+  `DELETE p
+   FROM products p
+   LEFT JOIN ingredients i ON p.name LIKE CONCAT('%', i.name, '%')
+   LEFT JOIN \`ingredients-variations\` iv ON
+    (p.name LIKE CONCAT('%', iv.variation, '%') AND iv.ingredientId = ?)
+      OR p.name LIKE CONCAT('%', iv.variation, '%')
+   WHERE ((i.id IS NOT NULL AND i.id = ?)
+      OR (iv.ingredientId IS NOT NULL AND iv.ingredientId = ?))
+      AND p.userId = ?`;
+
+  connection.query(query, [ingredientId, ingredientId, ingredientId, userId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при удалении ингредиента из базы данных" });
+    } else {
+      res.status(200).json({ message: "Продукты успешно удалены" });
+    }
+  });
+});
+
+
+router.post("/variation", (req, res) => {
+  let { ingredientId, variation } = req.body;
+
+  const query = `INSERT INTO \`ingredients-variations\` (ingredientId, variation) VALUES (?, ?)`;
+
+  connection.query(
+    query,
+    [ingredientId, variation],
+    (error, results, fields) => {
+      if (error) {
+        console.error("Ошибка при выполнении запроса:", error);
+        res
+          .status(500)
+          .json({ info: "Ошибка при выполнении запроса к базе данных" });
+      } else {
+        res.status(201).json({ info: "Вариация успешно добавлена" });
+      }
+    }
+  );
+});
+
 router.get("/files/:filename", (req, res) => {
   const filename = req.params.filename;
   const filePath = path.join(__dirname, "ingredients", filename); // Путь к папке, где хранятся файлы
@@ -241,7 +531,6 @@ router.put("/:ingredientId", (req, res) => {
     name,
     image,
     description,
-    variations,
     advantages,
     disadvantages,
     origin,
@@ -254,9 +543,8 @@ router.put("/:ingredientId", (req, res) => {
     storageMethods,
     externalLinks,
     shoppingListGroup,
-    } = req.body;
-    
-    variations = JSON.stringify(variations);
+  } = req.body;
+
   advantages = JSON.stringify(advantages);
   disadvantages = JSON.stringify(disadvantages);
   recommendations = JSON.stringify(recommendations);
@@ -268,29 +556,29 @@ router.put("/:ingredientId", (req, res) => {
   precautions = JSON.stringify(precautions);
   tips = JSON.stringify(tips);
 
-    const updateQuery =
-        'UPDATE ingredients SET name = ?, image =?, description=?, variations=?, advantages=?, disadvantages=?, origin=?, precautions=?, tips=?, recommendations=?, contraindicates=?, compatibleDishes=?, cookingMethods=?, storageMethods=?, externalLinks=?, shoppingListGroup=? WHERE id = ?';
-    
+  const updateQuery =
+    "UPDATE ingredients SET name = ?, image =?, description=?, advantages=?, disadvantages=?, origin=?, precautions=?, tips=?, recommendations=?, contraindicates=?, compatibleDishes=?, cookingMethods=?, storageMethods=?, externalLinks=?, shoppingListGroup=? WHERE id = ?";
+
   connection.query(
     updateQuery,
-    [name,
-    image,
-    description,
-    variations,
-    advantages,
-    disadvantages,
-    origin,
-    precautions,
-    tips,
-    recommendations,
-    contraindicates,
-    compatibleDishes,
-    cookingMethods,
-    storageMethods,
-    externalLinks,
+    [
+      name,
+      image,
+      description,
+      advantages,
+      disadvantages,
+      origin,
+      precautions,
+      tips,
+      recommendations,
+      contraindicates,
+      compatibleDishes,
+      cookingMethods,
+      storageMethods,
+      externalLinks,
       shoppingListGroup,
-          ingredientId
-      ],
+      ingredientId,
+    ],
     (error, results, fields) => {
       if (error) {
         if (error.code === "ER_DUP_ENTRY") {
@@ -315,18 +603,24 @@ router.put("/:ingredientId/publish", (req, res) => {
   const updateRoleQuery =
     "UPDATE ingredients SET status = 'public' WHERE id = ?";
 
-  connection.query(updateRoleQuery, [ingredientId], (error, results, fields) => {
-    if (error) {
-      console.error("Ошибка при выполнении запроса:", error);
-      res
-        .status(500)
-        .json({ error: "Ошибка при обновлении роли ингредиента в базе данных" });
-    } else {
-      res
-        .status(200)
-        .json({ message: "Роль ингредиента успешно обновлена на public" });
+  connection.query(
+    updateRoleQuery,
+    [ingredientId],
+    (error, results, fields) => {
+      if (error) {
+        console.error("Ошибка при выполнении запроса:", error);
+        res
+          .status(500)
+          .json({
+            error: "Ошибка при обновлении роли ингредиента в базе данных",
+          });
+      } else {
+        res
+          .status(200)
+          .json({ message: "Роль ингредиента успешно обновлена на public" });
+      }
     }
-  });
+  );
 });
 
 router.post("/image", upload.single("image"), (req, res) => {
@@ -334,6 +628,27 @@ router.post("/image", upload.single("image"), (req, res) => {
   res.status(200).json({
     message: "Изображение секции успешно загружено",
     filename: imageFilename,
+  });
+});
+
+router.get("/search", (req, res) => {
+  const searchText = req.query.search; 
+
+  const selectQuery =
+    `
+    SELECT DISTINCT i.id, i.name
+    FROM ingredients i
+    INNER JOIN \`groups-ingredients\` gi ON i.id = gi.ingredientId
+    LEFT JOIN \`ingredients-variations\` iv ON i.id = iv.ingredientId
+    WHERE (i.name LIKE ? OR iv.variation LIKE ?) AND i.status = 'public'`
+
+      connection.query(selectQuery, [`%${searchText}%`,`%${searchText}%`], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results);
+    }
   });
 });
 

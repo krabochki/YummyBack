@@ -60,7 +60,6 @@ router.post("/", (req, res) => {
     cookingTime,
     servings,
     origin,
-    ingredients,
     nutritions,
     instructions,
     history,
@@ -68,7 +67,6 @@ router.post("/", (req, res) => {
 
   nutritions = JSON.stringify(nutritions);
   instructions = JSON.stringify(instructions);
-  ingredients = JSON.stringify(ingredients);
 
   if (!name || !authorId) {
     return res
@@ -88,11 +86,10 @@ router.post("/", (req, res) => {
     servings,
     origin,
     nutritions,
-    ingredients,
     instructions,
     history)
     VALUES
-    (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+    (?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
   connection.query(
     insertQuery,
@@ -108,7 +105,6 @@ router.post("/", (req, res) => {
       servings,
       origin,
       nutritions,
-      ingredients,
       instructions,
       history,
     ],
@@ -871,6 +867,28 @@ router.get("/search/liked/:userId", (req, res) => {
     }
   });
 });
+
+router.get("/ingredients/:recipeId", (req, res) => {
+  const recipeId = Number(req.params.recipeId);
+  const query = `
+    select name, quantity, unit 
+    from \`recipes-ingredients\` 
+    where recipeId = ?
+ `;
+  
+    connection.query(query, [recipeId] ,(error, results, fields) => {
+      if (error) {
+        console.error("Ошибка при выполнении запроса:", error);
+        res
+          .status(500)
+          .json({ error: "Ошибка при получении данных из базы данных" });
+      } else {
+        res.status(200).json(results);
+      }
+    });
+  
+});
+
 router.get("/user-liked", (req, res) => {
   const userId = Number(req.query.userId);
   const page = req.query.page;
@@ -1452,6 +1470,32 @@ router.delete("/likes/:recipeId/:userId", (req, res) => {
         res.status(500).json({ error: "Ошибка при удалении лайка" });
       } else {
         res.status(200).json({ success: true, message: "Лайк успешно удален" });
+      }
+    }
+  );
+});
+
+
+router.post("/ingredient/:recipeId", (req, res) => {
+  const { name, unit, quantity } = req.body;
+  const recipeId = req.params.recipeId;
+
+  const query = `
+    INSERT INTO \`recipes-ingredients\` (recipeId, name, unit, quantity)
+    VALUES (?, ?, ?, ?);
+  `;
+
+  connection.query(
+    query,
+    [recipeId, name, unit, quantity],
+    (error, results, fields) => {
+      if (error) {
+        console.error("Ошибка при выполнении запроса:", error);
+        res.status(500).json({ error: "Ошибка при добавлении лайка" });
+      } else {
+        res
+          .status(200)
+          .json({ info: "Ингредиент рецепта успешно записан" });
       }
     }
   );

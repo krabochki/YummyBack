@@ -92,7 +92,7 @@ const selectQuery = `
   SELECT c.*, COUNT(DISTINCT rc.recipeId) AS recipeCount
   FROM categories c
   LEFT JOIN \`recipes-categories\` rc ON c.id = rc.categoryId
-  WHERE c.status = 'public' AND c.sectionId = ?
+  WHERE c.status = 'public' AND c.sectionId = ? 
   GROUP BY c.id, c.name
   ORDER BY recipeCount DESC, c.name
   LIMIT 8
@@ -358,14 +358,14 @@ router.get("/some-section/:sectionId/:userId", (req, res) => {
 
   const startIndex = page * limit;
 
-  let countQuery = `SELECT COUNT(*) AS totalCount FROM categories WHERE sectionId = ?  `;
+  let countQuery = `SELECT COUNT(*) AS totalCount FROM categories WHERE sectionId = ? AND status = 'public'  `;
 
 const selectQuery = `
   SELECT c.*, COUNT(DISTINCT CASE WHEN (r.status = 'public' OR r.authorId = ${userId})  THEN rc.recipeId END) AS recipeCount
 FROM categories c
 LEFT JOIN \`recipes-categories\` rc ON c.id = rc.categoryId
 LEFT JOIN recipes r ON rc.recipeId = r.id AND (r.status = 'public' OR r.authorId = ${userId})
-WHERE c.sectionId = ?
+WHERE c.sectionId = ? AND c.status = 'public'
 GROUP BY c.id, c.name
 ORDER BY recipeCount DESC, c.id
   LIMIT ${startIndex}, ${limit}
