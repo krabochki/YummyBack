@@ -34,7 +34,134 @@ router.get("/products/:userId", (req, res) => {
 router.get("/events/:userId", (req, res) => {
   const userId = req.params.userId;
 
-  const query = "SELECT * FROM calendarEvents WHERE userId = ?";
+  const query =
+    "SELECT * FROM calendarEvents WHERE userId = ? ORDER by start DESC, end DESC, title";
+
+  connection.query(query, [userId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при выполнении запроса к базе данных" });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+router.get("/today-upcoming-reminder/:userId", (req, res) => {
+  const userId = req.params.userId;
+
+  const query = `
+    SELECT id
+    FROM notifications
+    WHERE DATE(sendDate) = CURDATE() AND context = 'plan-reminder' AND userId=?
+  `;
+
+  connection.query(query, [userId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при выполнении запроса к базе данных" });
+    } else {
+      if (results.length > 0) {
+        res.status(200).json({ hasRows: true });
+      } else {
+        res.status(200).json({ hasRows: false });
+      }
+    }
+  });
+});
+
+// DELETE n
+// FROM notifications n
+// JOIN calendarEvents ce ON n.relatedId = ce.id
+// WHERE n.userId = 8
+//     AND n.context = 'plan-reminder-start'
+//     AND ce.userId = 8
+//     AND DATE(ce.end) < CURDATE();
+
+router.delete("/old-started-reminders/:userId", (req, res) => {
+  const userId = req.params.userId;
+
+  const query = `
+    DELETE n
+    FROM notifications n
+    JOIN calendarEvents ce ON n.relatedId = ce.id
+    WHERE n.userId = ?
+      AND n.context = 'plan-reminder-start'
+      AND ce.userId = ?
+      AND DATE(ce.end) < CURDATE();
+  `;
+
+  connection.query(query, [userId, userId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при выполнении запроса к базе данных" });
+    } else {
+      res.status(200).json({ message: "Успешно" });
+    }
+  });
+});
+
+router.get("/started-events/:userId", (req, res) => {
+  const userId = req.params.userId;
+  const query = `
+    SELECT id, title,start 
+    FROM calendarEvents 
+    WHERE userId = 8 
+      AND start < now() 
+      AND end > now() 
+      AND id NOT IN 
+        (SELECT relatedId 
+         FROM notifications 
+         WHERE context = 'plan-reminder-start')
+  `;
+
+  connection.query(query, [userId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при выполнении запроса к базе данных" });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+router.delete("/old-upcoming-reminders/:userId", (req, res) => {
+  const userId = req.params.userId;
+
+  const query = `
+    delete FROM notifications
+WHERE date(STR_TO_DATE(sendDate, '%Y-%m-%dT%H:%i:%s.%fZ')) < CURDATE() AND context = 'plan-reminder' and userId = ?
+  `;
+
+  connection.query(query, [userId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при выполнении запроса к базе данных" });
+    } else {
+      res.status(200).json({ message: "Успешно" });
+    }
+  });
+});
+
+router.get("/upcoming-events/:userId", (req, res) => {
+  const userId = req.params.userId;
+
+  const query = `
+    SELECT id, title,start
+    FROM calendarEvents 
+WHERE userId = ? AND start > NOW() AND start <= DATE_ADD(NOW(), INTERVAL 3 DAY)
+    ORDER by start DESC, end DESC
+  `;
 
   connection.query(query, [userId], (error, results, fields) => {
     if (error) {
@@ -76,8 +203,6 @@ router.put("/products/:productId/mark-bought", (req, res) => {
   }
 });
 
-
-
 router.put("/events/:eventId/change-date", (req, res) => {
   const eventId = req.params.eventId;
   const { start, end } = req.body;
@@ -108,10 +233,10 @@ router.put("/events/:eventId/change-date", (req, res) => {
 });
 
 router.post("/products", (req, res) => {
-  let { name, note, typeId, amount, userId,recipeId } = req.body;
+  let { name, note, typeId, amount, userId, recipeId } = req.body;
 
   if (recipeId === 0) {
-    recipeId = null
+    recipeId = null;
   }
   if (!name || !userId) {
     return res
@@ -121,10 +246,10 @@ router.post("/products", (req, res) => {
 
   const insertQuery =
     "INSERT INTO products (name, note, typeId, amount, userId,recipeId) VALUES (?, ?, ?, ?, ?,?)";
- 
+
   connection.query(
     insertQuery,
-    [name, note, typeId, amount, userId,recipeId],
+    [name, note, typeId, amount, userId, recipeId],
     (error, results, fields) => {
       if (error) {
         console.error("Ошибка при выполнении запроса:", error);
@@ -132,10 +257,83 @@ router.post("/products", (req, res) => {
           .status(500)
           .json({ error: "Ошибка при выполнении запроса к базе данных" });
       } else {
-        res.status(201).json({ message: "Продукт успешно добавлен" });
+        res.status(201).json({ id: results.insertId,  message: "Продукт успешно добавлен" });
       }
     }
   );
+});
+
+router.get("/related-ingredients-by-product/:productId", (req, res) => {
+  const productId = req.params.productId;
+  const selectQuery = `
+    SELECT 
+    productId, ingredientId
+FROM (
+    SELECT 
+        p.id as productId,
+        COALESCE(i.id, iv.ingredientId) AS ingredientId,
+        ROW_NUMBER() OVER (PARTITION BY p.id ORDER BY p.id) AS rn
+    FROM 
+        products p
+    LEFT JOIN 
+        ingredients i ON p.name LIKE CONCAT('%',i.name,'%')  AND i.status = 'public'
+    LEFT JOIN 
+        \`ingredients-variations\` iv ON p.name LIKE CONCAT('%', iv.variation, '%')
+    WHERE 
+        p.id =  ? 
+) AS subquery where rn=1 and ingredientId`;
+
+  connection.query(selectQuery, [productId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+router.get("/related-ingredients/:userId", (req, res) => {
+  const userId = req.params.userId;
+  const selectQuery = `
+ WITH ingredient_lengths AS (
+    SELECT 
+        p.id as productId,
+        COALESCE(i.id, iv.ingredientId) AS ingredientId,
+        COALESCE(i.name, iv.variation) AS ingredient_name,
+        LENGTH(COALESCE(i.name, iv.variation)) AS name_length,
+        ROW_NUMBER() OVER (PARTITION BY p.id  ORDER BY LENGTH(COALESCE(i.name, iv.variation)) DESC) AS rn
+    FROM 
+        products p
+    LEFT JOIN 
+        ingredients i ON p.name LIKE CONCAT('%',i.name,'%')  AND i.status = 'public'
+    LEFT JOIN 
+        \`ingredients-variations\` iv ON p.name LIKE CONCAT('%', iv.variation, '%')
+    WHERE 
+        p.userId = ? and p.recipeId is null
+)
+SELECT 
+    productId,
+    ingredientId
+FROM 
+    ingredient_lengths
+WHERE 
+    rn = 1;
+
+  `;
+
+  connection.query(selectQuery, [userId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results);
+    }
+  });
 });
 
 router.post("/events", (req, res) => {
@@ -152,7 +350,15 @@ router.post("/events", (req, res) => {
 
   connection.query(
     insertQuery,
-    [new Date(end), new Date(start), color, title, recipeId || null, wholeDay, userId],
+    [
+      new Date(end),
+      new Date(start),
+      color,
+      title,
+      recipeId || null,
+      wholeDay,
+      userId,
+    ],
     (error, results, fields) => {
       if (error) {
         console.error("Ошибка при выполнении запроса:", error);
@@ -160,12 +366,13 @@ router.post("/events", (req, res) => {
           .status(500)
           .json({ error: "Ошибка при выполнении запроса к базе данных" });
       } else {
-        res.status(201).json({ message: "Продукт успешно добавлен" });
+        res
+          .status(201)
+          .json({ message: "Продукт успешно добавлен", id: results.insertId });
       }
     }
   );
 });
-
 
 router.put("/events/:eventId", (req, res) => {
   const eventId = req.params.eventId;
@@ -182,7 +389,16 @@ router.put("/events/:eventId", (req, res) => {
 
   connection.query(
     updateQuery,
-    [new Date(end), new Date(start), color, title, recipeId || null, wholeDay, userId, eventId],
+    [
+      new Date(end),
+      new Date(start),
+      color,
+      title,
+      recipeId || null,
+      wholeDay,
+      userId,
+      eventId,
+    ],
     (error, results, fields) => {
       if (error) {
         console.error("Ошибка при выполнении запроса:", error);
@@ -195,9 +411,6 @@ router.put("/events/:eventId", (req, res) => {
     }
   );
 });
-
-
-
 
 router.delete("/products/:productId", (req, res) => {
   const productId = req.params.productId;
@@ -220,16 +433,56 @@ router.delete("/events/:eventId", (req, res) => {
   const eventId = req.params.eventId;
 
   const deleteQuery = "DELETE FROM calendarEvents WHERE id = ?";
+  const deleteRelatedQuery = `DELETE FROM notifications 
+  WHERE relatedId = ?
+  AND context = 'plan-reminder-start'
+  AND userId = (SELECT userId FROM calendarEvents WHERE id = ?)`;
 
-  connection.query(deleteQuery, [eventId], (error, results, fields) => {
-    if (error) {
-      console.error("Ошибка при выполнении запроса:", error);
-      res
-        .status(500)
-        .json({ error: "Ошибка при выполнении запроса к базе данных" });
-    } else {
-      res.status(200).json({ message: "Продукт успешно удален" });
+  connection.beginTransaction(function (err) {
+    if (err) {
+      throw err;
     }
+
+    connection.query(
+      deleteRelatedQuery,
+      [eventId, eventId],
+      (error, results, fields) => {
+        if (error) {
+          console.error("Ошибка при выполнении запроса:", error);
+          return connection.rollback(function () {
+            res
+              .status(500)
+              .json({ error: "Ошибка при выполнении запроса к базе данных" });
+          });
+        }
+
+        connection.query(
+          deleteQuery,
+          [eventId],
+          (relatedError, relatedResults) => {
+            if (relatedError) {
+              console.error("Ошибка при удалении данных:", relatedError);
+              return connection.rollback(function () {
+                res.status(500).json({ error: "Ошибка при удалении данных" });
+              });
+            }
+
+            connection.commit(function (commitError) {
+              if (commitError) {
+                console.error("Ошибка при коммите транзакции:", commitError);
+                return connection.rollback(function () {
+                  res
+                    .status(500)
+                    .json({ error: "Ошибка при коммите транзакции" });
+                });
+              }
+
+              res.status(200).json({ message: "Событие успешно удалено" });
+            });
+          }
+        );
+      }
+    );
   });
 });
 

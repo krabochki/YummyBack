@@ -19,7 +19,7 @@ const multer = require("multer");
 const fs = require("fs");
 
 const storage = multer.diskStorage({
-  destination: "groups/",
+  destination: "images/groups/",
   filename: function (req, file, cb) {
     cb(null, Date.now() + path.extname(file.originalname));
   },
@@ -41,6 +41,26 @@ router.get('/', (req, res) => {
     }
   });
 });
+
+
+router.get('/for-editing/:id', (req, res) => {
+  const id = Number(req.params.id);
+  let selectQuery = "SELECT * FROM `groups` WHERE id = ?";
+
+  connection.query(selectQuery,[id], (error, groups, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+   
+          res.status(200).json(groups[0]);
+
+
+    }
+  });
+});
+
+
 
 router.post("/", (req, res) => {
   const { name, image } = req.body;
@@ -94,7 +114,7 @@ router.delete('/:groupId', (req, res) => {
 
 router.get("/files/:filename", (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(__dirname, "groups", filename); // Путь к папке, где хранятся файлы
+  const filePath = path.join(__dirname, "\\images\\groups", filename); // Путь к папке, где хранятся файлы
 
   if (fs.existsSync(filePath)) {
     res.sendFile(filePath);
@@ -106,7 +126,7 @@ router.get("/files/:filename", (req, res) => {
 
 router.delete("/files/:filename", async (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(__dirname, "groups", filename);
+  const filePath = path.join(__dirname, "\\images\\groups", filename);
   if (filePath)
     try {
       fs.unlink(filePath, (err) => {
@@ -126,16 +146,36 @@ router.delete("/files/:filename", async (req, res) => {
 router.put('/:groupsId', (req, res) => {
   const groupsId = Number(req.params.groupsId);
     const {
-      name,image
+      name
   } = req.body;
 
-  const updateQuery = "UPDATE `groups` SET name = ?, image = ? WHERE id = ?";
+  const updateQuery = "UPDATE `groups` SET name = ? WHERE id = ?";
 
-  connection.query(updateQuery, [name,image, groupsId], (error, results, fields) => {
+  connection.query(updateQuery, [name, groupsId], (error, results, fields) => {
     if (error) {
                 if (error.code === 'ER_DUP_ENTRY') {
           return res.status(409).json({ info: "Группа с таким именем уже существует" });
         }
+
+      console.error("Ошибка при выполнении запроса:", error);
+      res.status(500).json({ error: "Ошибка при обновлении секции в базе данных" });
+    } else {
+      res.status(200).json({ message: "Группа успешно обновлена" });
+    }
+  });
+});
+
+router.put('/set-image/:groupsId', (req, res) => {
+  const groupsId = Number(req.params.groupsId);
+  const {
+      image
+  } = req.body;
+
+  const updateQuery = "UPDATE `groups` SET  image = ? WHERE id = ?";
+
+  connection.query(updateQuery, [image, groupsId], (error, results, fields) => {
+    if (error) {
+                
 
       console.error("Ошибка при выполнении запроса:", error);
       res.status(500).json({ error: "Ошибка при обновлении секции в базе данных" });
@@ -249,16 +289,22 @@ router.get("/some-full/:userId", (req, res) => {
 
   const selectQuery = `
     SELECT g.id, g.name, g.image,
-      COUNT(DISTINCT ri.recipeId) AS recipesCount
-    FROM \`groups\` g
-    LEFT JOIN \`groups-ingredients\` gi ON g.id = gi.groupId
-    LEFT JOIN ingredients i ON gi.ingredientId = i.id
-    LEFT JOIN \`recipes-ingredients\` ri ON i.name = ri.name OR ri.name IN 
-      (SELECT variation FROM \`ingredients-variations\` WHERE ingredientId = i.id)
-    LEFT JOIN recipes r ON ri.recipeId = r.id
-    WHERE i.status = 'public' AND (r.status = 'public' OR r.authorId = ? OR r.id IS NULL)  OR gi.groupId IS NULL
-    GROUP BY g.id
-    ORDER BY recipesCount DESC, g.id`;
+    COUNT(DISTINCT ri.recipeId) AS recipesCount
+    FROM (
+      SELECT i.id as ingredientId, r.id as recipeId
+      FROM ingredients i
+      JOIN \`recipes-ingredients\` ri ON  ri.name LIKE CONCAT('%', i.name, '%')
+      JOIN recipes r ON ri.recipeId = r.id
+      WHERE (r.status = 'public' OR r.authorId = ?) 
+        OR ri.name IN (SELECT variation FROM \`ingredients-variations\` WHERE ingredientId = i.id)
+      GROUP BY i.id, r.id
+    ) AS ri
+    RIGHT JOIN \`groups-ingredients\` gi ON ri.ingredientId = gi.ingredientId
+    RIGHT JOIN \`groups\` g ON gi.groupId = g.id
+    GROUP BY gi.groupId, g.name
+    ORDER BY recipesCount DESC, name
+     LIMIT ${startIndex}, ${limit};
+    `;
   
   connection.query(countQuery, (error, countResults, fields) => {
     if (error) {
@@ -300,11 +346,13 @@ router.get("/some-ingredients/:groupId/:userId", (req, res) => {
       (SELECT COUNT(DISTINCT ri.recipeId)
       FROM \`recipes-ingredients\` ri
       JOIN recipes r ON ri.recipeId = r.id
-      WHERE (r.status = 'public' OR r.authorId = ?) 
-        AND (ri.name = i.name OR ri.name IN (SELECT variation FROM \`ingredients-variations\` WHERE ingredientId = i.id))) 
+        WHERE (r.status = 'public' OR r.authorId = ?) 
+        AND (          ri.name LIKE CONCAT('%',i.name,'%')
+         OR ri.name IN (SELECT variation FROM \`ingredients-variations\` WHERE ingredientId = i.id)))
       AS recipesCount
     FROM ingredients i
-    INNER JOIN \`groups-ingredients\` gi ON i.id = gi.ingredientId
+        INNER JOIN \`groups-ingredients\` gi ON i.id = gi.ingredientId
+
     WHERE i.status = 'public' AND gi.groupId = ?
     ORDER BY recipesCount DESC, i.name
       LIMIT ${startIndex}, ${limit};
@@ -318,6 +366,7 @@ router.get("/some-ingredients/:groupId/:userId", (req, res) => {
     } else {
       const totalCount = countResults[0].totalCount;
 
+
       connection.query(selectQuery, [userId, groupId], (error, results, fields) => {
         if (error) {
           console.error("Ошибка при выполнении запроса:", error);
@@ -329,6 +378,7 @@ router.get("/some-ingredients/:groupId/:userId", (req, res) => {
     }
   });
 });
+
 
 
 
@@ -346,6 +396,42 @@ router.get("/search", (req, res) => {
     }
   });
 });
+
+
+router.get("/global/search", (req, res) => {
+  const searchText = req.query.search; 
+
+  const selectQuery =
+    
+    `
+      SELECT * FROM
+      (
+        (  
+          SELECT id, name, 'group' AS type
+          FROM \`groups\` WHERE name LIKE ?
+        )
+        UNION
+        (
+          SELECT DISTINCT i.id, i.name, 'ingredient' AS type
+          FROM ingredients i
+          INNER JOIN \`groups-ingredients\` gi ON i.id = gi.ingredientId
+          LEFT JOIN \`ingredients-variations\` iv ON i.id = iv.ingredientId
+          WHERE (i.name LIKE ? OR iv.variation LIKE ?) AND i.status = 'public'
+        )
+      ) AS subquery
+      ORDER BY name
+      `;
+
+  connection.query(selectQuery, [`%${searchText}%`,  `%${searchText}%`,  `%${searchText}%`], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
 
 router.get("/search-by-group/:groupId", (req, res) => {
     const groupId = Number(req.params.groupId);

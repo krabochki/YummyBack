@@ -1,8 +1,6 @@
 const express = require("express");
 const router = express.Router();
 
-const POPULAR_RECIPES_LENGTH = 30;
-
 const corsOptions = {
   origin: true,
   credentials: true,

@@ -1,3 +1,4 @@
+
 const express = require("express");
 const bodyParser = require("body-parser");
 
@@ -21,7 +22,7 @@ const multer = require("multer");
 const fs = require("fs");
 
 const storage = multer.diskStorage({
-  destination: "categories/",
+  destination: "images/categories/",
   filename: function (req, file, cb) {
     cb(null, Date.now() + path.extname(file.originalname));
   },
@@ -48,6 +49,25 @@ router.put("/set-section/:categoryId", (req, res) => {
     }
   });
 });
+
+router.get('/editing/:id', (req, res) => {
+  const id = Number(req.params.id);
+  let selectQuery = "SELECT id,name,image, sectionId FROM categories WHERE id = ?";
+
+  connection.query(selectQuery,[id], (error, categories, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res.status(500).json({ error: "Ошибка при получении данных из базы данных" });
+    } else {
+   
+          res.status(200).json(categories[0]);
+
+
+    }
+  });
+});
+
+
 
 router.put("/unset-section/:categoryId", (req, res) => {
   const categoryId = req.params.categoryId;
@@ -85,13 +105,17 @@ router.get("/awaits-count", (req, res) => {
   });
 });
 
-router.get("/by-section/:sectionId", (req, res) => {
+router.get("/by-section/:sectionId/:userId", (req, res) => {
   const sectionId = Number(req.params.sectionId);
+  const authorId = Number(req.params.userId) || 0;
 
 const selectQuery = `
-  SELECT c.*, COUNT(DISTINCT rc.recipeId) AS recipeCount
+  SELECT c.*, COUNT(DISTINCT CASE WHEN (r.status = 'public' OR r.authorId = ?)
+      THEN rc.recipeId END) AS recipeCount
   FROM categories c
   LEFT JOIN \`recipes-categories\` rc ON c.id = rc.categoryId
+      LEFT JOIN recipes r ON rc.recipeId = r.id AND (r.status = 'public' OR r.authorId = ?)
+
   WHERE c.status = 'public' AND c.sectionId = ? 
   GROUP BY c.id, c.name
   ORDER BY recipeCount DESC, c.name
@@ -99,7 +123,7 @@ const selectQuery = `
 `;
 
 
-  connection.query(selectQuery, [sectionId], (error, results, fields) => {
+  connection.query(selectQuery, [authorId, authorId, sectionId], (error, results, fields) => {
     if (error) {
       console.error("Ошибка при выполнении запроса:", error);
       res
@@ -246,7 +270,8 @@ router.get('/popular/:userId', (req, res) => {
   LEFT JOIN \`recipes-categories\` rc ON c.id = rc.categoryId
   LEFT JOIN recipes r ON rc.recipeId = r.id AND (r.status = 'public' OR r.authorId = ${userId})
   GROUP BY c.id, c.name
-  ORDER BY recipeCount DESC
+  HAVING recipeCount > 0
+  ORDER BY recipeCount DESC, name, id
   LIMIT 8`;
 
   connection.query(popularCategoriesQuery, (error, results, fields) => {
@@ -298,10 +323,12 @@ router.get("/section/search/:sectionId", (req, res) => {
 });
 
 
-router.get("/some/popular", (req, res) => {
+router.get("/some/popular/:userId", (req, res) => {
   const page = req.query.page;
   const limit = req.query.limit || 2;
   const startIndex = page * limit;
+
+    const userId = Number(req.params.userId)
 
   const maxTotalResults = POPULAR_CATEGORIES_LENGTH; // Максимальное общее количество категорий
 
@@ -311,20 +338,23 @@ router.get("/some/popular", (req, res) => {
   const countQuery = `
     SELECT COUNT(*) AS totalCount
     FROM (
-      SELECT c.id
+      SELECT c.*, COUNT(DISTINCT CASE WHEN (r.status = 'public' OR r.authorId = 0) THEN rc.recipeId END) AS recipeCount
       FROM categories c
       LEFT JOIN \`recipes-categories\` rc ON c.id = rc.categoryId
-      GROUP BY c.id
-      LIMIT ${adjustedLimit} OFFSET ${startIndex}
+      LEFT JOIN recipes r ON rc.recipeId = r.id AND (r.status = 'public' OR r.authorId = ${userId})
+      GROUP BY c.id, c.name
+      HAVING recipeCount > 0
     ) AS subquery;
   `;
 
   const selectQuery = `
-    SELECT c.*, COUNT(DISTINCT rc.recipeId) AS recipeCount
+    SELECT c.*, COUNT(DISTINCT CASE WHEN (r.status = 'public' OR r.authorId = 0) THEN rc.recipeId END) AS recipeCount
     FROM categories c
     LEFT JOIN \`recipes-categories\` rc ON c.id = rc.categoryId
+    LEFT JOIN recipes r ON rc.recipeId = r.id AND (r.status = 'public' OR r.authorId = ${userId})
     GROUP BY c.id, c.name
-    ORDER BY recipeCount DESC, c.id
+    HAVING recipeCount > 0
+    ORDER BY recipeCount DESC, c.name, c.id
     LIMIT ${startIndex}, ${adjustedLimit};
   `;
 
@@ -449,7 +479,7 @@ router.delete("/:categoryId", (req, res) => {
 
 router.get("/files/:filename", (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(__dirname, "categories", filename); // Путь к папке, где хранятся файлы
+  const filePath = path.join(__dirname, "\\images\\categories", filename); // Путь к папке, где хранятся файлы
 
   if (fs.existsSync(filePath)) {
     res.sendFile(filePath);
@@ -461,7 +491,7 @@ router.get("/files/:filename", (req, res) => {
 
 router.delete("/files/:filename", async (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(__dirname, "categories", filename);
+  const filePath = path.join(__dirname, "\\images\\categories", filename);
   if (filePath)
     try {
       fs.unlink(filePath, (err) => {
@@ -486,6 +516,7 @@ router.put("/:categoryId", (req, res) => {
   const updateQuery =
     "UPDATE categories SET name = ?, image = ?, sectionId = ? WHERE id = ?";
 
+
   connection.query(
     updateQuery,
     [name, image, sectionId, categoryId],
@@ -501,7 +532,7 @@ router.put("/:categoryId", (req, res) => {
           .status(500)
           .json({ error: "Ошибка при обновлении секции в базе данных" });
       } else {
-        res.status(200).json({ message: "Секция успешно обновлена" });
+        res.status(200).json({ message: "Категория успешно обновлена" });
       }
     }
   );

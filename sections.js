@@ -19,7 +19,7 @@ const multer = require("multer");
 const fs = require("fs");
 
 const storage = multer.diskStorage({
-  destination: "sections/",
+  destination: "images/sections/",
   filename: function (req, file, cb) {
     cb(null, Date.now() + path.extname(file.originalname));
   },
@@ -83,25 +83,30 @@ router.get('/some/:sectionId', (req, res) => {
 });
 
 
-router.get("/all-not-empty", (req, res) => {
+router.get("/all-not-empty/:userId", (req, res) => {
     const page = req.query.page;
   const limit = req.query.limit || 2;
 
   const startIndex = page * limit;
+  const authorId = Number(req.params.userId) || 0;
 
     let countQuery = `SELECT COUNT(*) AS totalCount FROM sections`;
 
 const selectQuery = `
-  SELECT s.*, COUNT(DISTINCT rc.recipeId) AS recipeCount
+  SELECT s.*, COUNT(DISTINCT CASE WHEN (r.status = 'public' OR r.authorId = ?)
+      THEN rc.recipeId END) AS recipeCount
   FROM sections s
   LEFT JOIN categories c ON s.id = c.sectionId
   LEFT JOIN \`recipes-categories\` rc ON c.id = rc.categoryId
+        LEFT JOIN recipes r ON rc.recipeId = r.id AND (r.status = 'public' OR r.authorId = ?)
+
   WHERE s.id IN (
     SELECT DISTINCT c.sectionId
     FROM categories c
     WHERE c.sectionId IS NOT NULL
-  )
+  ) AND  c.status = 'public'
   GROUP BY s.id, s.name
+  ORDER BY recipeCount DESC, s.name
   LIMIT ${startIndex}, ${limit};
 `;
 
@@ -116,7 +121,7 @@ const selectQuery = `
 
           const totalCount = countResults[0].totalCount;
 
-    connection.query(selectQuery, (error, results, fields) => {
+    connection.query(selectQuery,[authorId,authorId], (error, results, fields) => {
       if (error) {
         console.error("Ошибка при выполнении запроса:", error);
         res
@@ -248,6 +253,61 @@ router.get("/search", (req, res) => {
   });
 });
 
+// SELECT s.*, COUNT(DISTINCT rc.recipeId) AS recipeCount
+//     FROM sections s
+//     LEFT JOIN categories c ON s.id = c.sectionId
+//     LEFT JOIN \`recipes-categories\` rc ON c.id = rc.categoryId
+//     GROUP BY s.id, s.name
+router.get("/some-full/:userId", (req, res) => {
+
+  const authorId = Number(req.params.userId) || 0;
+
+  const page = req.query.page;
+  const limit = req.query.limit || 2;
+  const startIndex = page * limit;
+
+  const countQuery =
+  `
+    SELECT COUNT(DISTINCT s.id) AS totalCount
+    FROM sections s
+  `;
+
+  const selectQuery = `
+    SELECT s.id, s.name, s.image, COUNT(DISTINCT CASE WHEN (r.status = 'public' OR r.authorId = ?)
+      THEN rc.recipeId END) AS recipeCount
+    FROM sections s
+    LEFT JOIN categories c ON s.id = c.sectionId AND c.status = 'public'
+
+    LEFT JOIN \`recipes-categories\` rc ON c.id = rc.categoryId
+    LEFT JOIN recipes r ON rc.recipeId = r.id AND (r.status = 'public' OR r.authorId = ?)
+    GROUP BY s.id, s.name
+    ORDER BY recipeCount DESC, s.name
+    LIMIT ${startIndex}, ${limit};`;
+  
+  connection.query(countQuery, (error, countResults, fields) => {
+    if (error) {
+      res
+          .status(500)
+          .json({ error: "Ошибка при получении данных из базы данных" });
+    }
+
+  const totalCount = countResults[0].totalCount;
+
+  connection.query(selectQuery, [authorId,authorId], (error, results, fields) => {
+    if (error) {
+      console.error("Ошибка при выполнении запроса:", error);
+      res
+        .status(500)
+        .json({ error: "Ошибка при получении данных из базы данных" });
+      } else {
+        res.status(200).json({results:results, count:totalCount});
+      }
+    });
+  })
+});
+
+
+
 router.get('/short/:sectionId', (req, res) => {
   const sectionId = req.params.sectionId;
 
@@ -305,7 +365,7 @@ router.delete('/:sectionId', (req, res) => {
 
 router.get("/files/:filename", (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(__dirname, "sections", filename); // Путь к папке, где хранятся файлы
+  const filePath = path.join(__dirname, "\\images\\sections", filename); // Путь к папке, где хранятся файлы
 
   if (fs.existsSync(filePath)) {
     res.sendFile(filePath);
@@ -317,7 +377,7 @@ router.get("/files/:filename", (req, res) => {
 
 router.delete("/files/:filename", async (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(__dirname, "sections", filename);
+  const filePath = path.join(__dirname, "\\images\\sections", filename);
   if (filePath)
     try {
       fs.unlink(filePath, (err) => {

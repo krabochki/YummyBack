@@ -78,16 +78,46 @@ router.get("/", (req, res) => {
   const page = req.query.page;
   const limit = req.query.limit || 2;
   const role = req.query.role;
+  const tag = req.query.tag;
+  const state = req.query.state;
   const startIndex = page * limit;
 
-  let countQuery = `SELECT COUNT(*) AS totalCount FROM updates WHERE status = 'public' AND context = 'all'`;
+  let countQuery = `SELECT COUNT(*) AS totalCount
+  FROM updates
+  WHERE status = 'public'
+    AND context = 'all'`;
 
-  let selectQuery = `SELECT * FROM updates WHERE status = 'public' AND context = 'all' ORDER BY sendDate DESC LIMIT ${startIndex}, ${limit}`;
+  let selectQuery = `SELECT * FROM updates
+  WHERE status = 'public'
+    AND context = 'all'`;
 
   if (role !== 'user') {
-    countQuery = `SELECT COUNT(*) AS totalCount FROM updates WHERE status = 'public'`;
-    selectQuery = `SELECT * FROM updates WHERE status = 'public'  ORDER BY sendDate DESC LIMIT ${startIndex}, ${limit}`;
+
+    countQuery = `SELECT COUNT(*) AS totalCount
+    FROM updates
+    WHERE status = 'public'`;
+
+    selectQuery = `SELECT * FROM updates
+    WHERE status = 'public'`;
+
   }
+
+  if (state) {
+    selectQuery += ` AND state = '${state}'`;
+    countQuery += ` AND state = '${state}'`
+
+  }
+
+  if (tag) {
+    selectQuery += ` AND JSON_CONTAINS(tags, '"${tag}"', '$')`;
+    countQuery += ` AND JSON_CONTAINS(tags, '"${tag}"', '$')`
+  }
+
+  selectQuery += `
+  ORDER BY sendDate DESC
+  LIMIT ${startIndex}, ${limit}`
+
+ 
 
   connection.query(countQuery, (countError, countResults) => {
 
@@ -110,7 +140,7 @@ router.get("/", (req, res) => {
   );
 
 router.post("/", (req, res) => {
-  const { fullName, sendDate, authorId, status, description, tags, shortName, link, state, notify, context } = req.body;
+  const { fullName, authorId, status, description, tags, shortName, link, state, notify, context } = req.body;
 
   if (!fullName || !authorId) {
     return res
@@ -119,11 +149,11 @@ router.post("/", (req, res) => {
   }
 
   const insertQuery =
-    "INSERT INTO updates (fullName, sendDate, authorId, status, description, tags, shortName, link, state, notify, context) VALUES (?, ?, ?,?,?,?,?,?,?,?,?)";
+    "INSERT INTO updates (fullName, sendDate, authorId, status, description, tags, shortName, link, state, notify, context) VALUES (?, now(), ?,?,?,?,?,?,?,?,?)";
 
   connection.query(
     insertQuery,
-    [fullName, new Date(sendDate), authorId, status, description, JSON.stringify(tags), shortName, link, state, notify, context],
+    [fullName, authorId, status, description, JSON.stringify(tags), shortName, link, state, notify, context],
     (error, results, fields) => {
       if (error) {
         console.error("Ошибка при выполнении запроса:", error);
@@ -134,6 +164,66 @@ router.post("/", (req, res) => {
         const insertedSectionId = results.insertId;
 
         res.status(201).json({ id: insertedSectionId });
+      }
+    }
+  );
+});
+
+
+router.get("/tags", (req, res) => {
+  const searchText = req.query.search;
+  const selectQuery = `
+  SELECT distinct tag
+  FROM updates,
+     JSON_TABLE(tags, '$[*]' COLUMNS (
+         tag VARCHAR(100) PATH '$'
+     )) AS jt
+  WHERE status = 'public' AND tag LIKE ?
+  ORDER BY tag
+  LIMIT 10`;
+
+  connection.query(
+    selectQuery,
+    [`%${searchText}%`],
+    (error, results, fields) => {
+      if (error) {
+        console.error("Ошибка при выполнении запроса:", error);
+        res
+          .status(500)
+          .json({ error: "Ошибка при получении данных из базы данных" });
+      } else {
+
+        const tags = results.map(result => result.tag);
+        res.status(200).json(tags);
+      }
+    }
+  );
+});
+
+
+router.put("/state/:updateId", (req, res) => {
+  const updateId = Number(req.params.updateId);
+  const { state } = req.body;
+
+  if (!updateId || !state) {
+            res.status(404).json({info:'Нет данных'});
+
+  }
+
+  const updateQuery =
+    "UPDATE updates SET state = ? WHERE id = ?";
+
+  connection.query(
+    updateQuery,
+    [state, updateId],
+    (error, results, fields) => {
+      if (error) {
+        console.error("Ошибка при выполнении запроса:", error);
+        res
+          .status(500)
+          .json({ info: "Ошибка при выполнении запроса к базе данных" });
+      } else {
+        res.status(201).json({response:'Состояние новости успешно обновлены'});
       }
     }
   );

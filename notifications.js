@@ -22,7 +22,7 @@ router.post('/', (req, res) => {
     context,
     message,
     sendDate,
-    relatedLink,
+    link,
     relatedId,
     userId,
     } = req.body;
@@ -38,17 +38,18 @@ router.post('/', (req, res) => {
   
   connection.query(
     query,
-    [read, type, title, context, message, sendDate, relatedLink, relatedId || null, userId],
+    [read, type, title, context, message, sendDate, link, relatedId || null, userId],
     (error, results, fields) => {
       if (error) {
         console.error('Ошибка при выполнении запроса:', error);
         res.status(500).json({ error: 'Ошибка при выполнении запроса к базе данных' });
       } else {
-        res.status(201).json({ success: true, message: 'Уведомление успешно добавлено' });
+        res.status(201).json({ success: true, message: 'Уведомление успешно добавлено',id:results.insertId });
       }
     }
   );
 });
+
 
 router.delete('/:userId', (req, res) => {
   const userId = req.params.userId;
@@ -65,6 +66,7 @@ router.delete('/:userId', (req, res) => {
     }
   });
 });
+
 
 router.get('/:userId', (req, res) => {
   const userId = req.params.userId;

@@ -5,7 +5,6 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 
-
 const httpServer = require("http").createServer(app);
 const io = require("socket.io")(httpServer, { cors: { origin: "*" }});
 const users = require("./users.js");
@@ -18,6 +17,7 @@ const sections = require("./sections.js")
 const comments = require("./comments.js")
 const reports = require("./reports.js")
 const recipes = require("./recipes.js")
+const match = require("./match.js")
 const notifications = require("./notifications.js")
 const api = require("./auth.js")
 const connection = require("./db");
@@ -36,6 +36,7 @@ app.use(bodyParser.json());
 app.use("/users", users);
 app.use("/comments", comments);
 app.use("/reports", reports);
+app.use("/match", match);
 app.use("/updates", updates);
 app.use("/ingredients", ingredients);
 app.use("/categories", categories);
@@ -54,4 +55,4 @@ app.get("/", (req, res) => {
   res.send("Привет, мир!");
 });
 
-httpServer.listen(PORT, () => console.log(`Программа запущена на порту ${PORT}`));
+httpServer.listen(PORT, () => console.log(`Сервер работает на порту ${PORT}`));
